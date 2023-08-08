@@ -1,6 +1,6 @@
 {
   "name": "@wisdomstar94/react-server-sent-event-manager",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": false,
   "scripts": {
     "dev": "next dev",

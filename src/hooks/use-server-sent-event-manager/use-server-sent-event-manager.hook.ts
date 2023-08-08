@@ -2,20 +2,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IUseServerSentEventManager } from "./use-server-sent-event-manager.interface";
 import axios from "axios";
 
-export function useServerSentEventManager(props?: IUseServerSentEventManager.Props) {
-  const sses = useRef<IUseServerSentEventManager.SseInfo[]>([]); 
-  const [connectSuccessInfo, setConnectSuccessInfo] = useState<IUseServerSentEventManager.SseInfo>();
+const seperatorChar = `__@@@__`;
 
-  const setSse = useCallback((sseInfo: IUseServerSentEventManager.SseInfo): void => {
-    sses.current.push(sseInfo);
-  }, []);
+export function useServerSentEventManager(props?: IUseServerSentEventManager.Props) {
+  const {
+    onConnectSuccessSseInfo,
+  } = props ?? {};
+
+  const sseInfos = useRef<IUseServerSentEventManager.SseInfo[]>([]); 
+  const sseSubscriberInfos = useRef<Map<string, IUseServerSentEventManager.SubscriberInfo>>(new Map());
+  const ssePureListenerInfos = useRef<Map<string, IUseServerSentEventManager.PureListenerInfo>>(new Map());
+  // const [recentUpdatedAt, setRecentUpdatedAt] = useState({ createdAt: 0 });
 
   const removeSse = useCallback((connectUrl: string): void => {
-    sses.current = sses.current.filter(x => x.connectUrl !== connectUrl);
+    sseInfos.current = sseInfos.current.filter(x => x.connectUrl !== connectUrl);
+    // setRecentUpdatedAt({ createdAt: Date.now() });
   }, []);
 
   const getSse = useCallback((connectUrl: string): IUseServerSentEventManager.SseInfo | undefined => {
-    return sses.current.find(x => x.connectUrl === connectUrl);
+    return sseInfos.current.find(x => x.connectUrl === connectUrl);
   }, []);
 
   const isAlreadyConnected = useCallback((url: string): boolean => {
@@ -41,14 +46,14 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
   
       eventSource.onopen = function() {
         console.log(`success to connect to server "${connectUrl}"`);
-        const sse: IUseServerSentEventManager.SseInfo = {
+        const sseInfo: IUseServerSentEventManager.SseInfo = {
           connectUrl,
           disconnectUrl,
           eventSource,
-          listenerItems: [],
         };
-        setSse(sse);
-        setConnectSuccessInfo(sse);
+        sseInfos.current.push(sseInfo);
+        if (typeof onConnectSuccessSseInfo === 'function') onConnectSuccessSseInfo(sseInfo);
+        // setRecentUpdatedAt({ createdAt: Date.now() });
       };
   
       eventSource.onerror = function() {
@@ -72,66 +77,69 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
     };
 
     tryConnect();
-  }, [isAlreadyConnected, removeSse, setSse]);
-
-  const clear = useCallback((sse: IUseServerSentEventManager.SseInfo) => {
-    const {
-      connectUrl,
-      disconnectUrl,
-      eventSource,
-      listenerItems,
-    } = sse;
-
-    for (const listenerItem of listenerItems) {
-      eventSource.removeEventListener(listenerItem.eventName, listenerItem.listener);
-    }
-
-    if (typeof disconnectUrl === 'string') {
-      axios.get(disconnectUrl).then(res => {
-
-      }).catch(error => {
-
-      }).finally(() => {
-        
-      });
-    }
-
-    eventSource.close();
-  }, []);
+  }, [isAlreadyConnected, onConnectSuccessSseInfo, removeSse]);
 
   const disconnect = useCallback((connectUrl: string) => {
-    const sse = getSse(connectUrl);
-    if (sse === undefined) return;
-    clear(sse);
-  }, [clear, getSse]);
+    console.log('@disconnect', connectUrl);
+    const sseInfo = sseInfos.current.find(x => x.connectUrl === connectUrl);
+    if (sseInfo === undefined) return;
+    
+    const entries = Array.from(ssePureListenerInfos.current.entries());
+    for (const [key, pureListenerInfo] of entries) {
+      sseInfo.eventSource.removeEventListener(pureListenerInfo.eventName, pureListenerInfo.listener);
+      ssePureListenerInfos.current.delete(`${connectUrl}${seperatorChar}${pureListenerInfo.eventName}`);
+    }
 
-  const setListener = useCallback((connectUrl: string, eventName: string, listener: (event: MessageEvent) => void) => {
-    const sse = getSse(connectUrl);
-    if (sse === undefined) return;
-    const eventSource = sse.eventSource;
-    eventSource.addEventListener(eventName, listener);
-    sse.listenerItems.push({
-      eventName,
-      listener,
-    });
-  }, [getSse]);
+    sseInfo.eventSource.close();
+    sseInfos.current = sseInfos.current.filter(x => x.connectUrl !== connectUrl);
+    // setRecentUpdatedAt({ createdAt: Date.now() });
+  }, []);
 
-  const removeListener = useCallback((connectUrl: string, eventName: string) => {
-    const sse = getSse(connectUrl);
-    if (sse === undefined) return;
-    const listenerItem = sse.listenerItems.find(x => x.eventName === eventName);
-    if (listenerItem === undefined) return;
-    const eventSource = sse.eventSource;
-    eventSource.removeEventListener(eventName, listenerItem.listener);
-    sse.listenerItems = sse.listenerItems.filter(x => x.eventName !== eventName);
-  }, [getSse]);
+  const saveSubscriberInfo = useCallback((subscriber: IUseServerSentEventManager.SubscriberInfo) => {
+    sseSubscriberInfos.current.set(`${subscriber.connectUrl}${seperatorChar}${subscriber.eventName}`, subscriber);
+  }, []);
+
+  const subscribe = useCallback((connectUrl: string, eventName: string) => {
+    const sseInfo = sseInfos.current.find(x => x.connectUrl === connectUrl);
+    if (sseInfo === undefined) {
+      console.error(`${connectUrl}에 연결되어 있지 않습니다.`);
+      return;
+    }
+    const listener: IUseServerSentEventManager.SseListener = (event) => {
+      const subscriberInfo = sseSubscriberInfos.current.get(`${connectUrl}${seperatorChar}${eventName}`);
+      if (subscriberInfo === undefined) return;
+      subscriberInfo.listener(event);
+    };
+    ssePureListenerInfos.current.set(`${connectUrl}${seperatorChar}${eventName}`, { eventName, listener });
+    sseInfo.eventSource.addEventListener(eventName, listener);
+  }, []);
+
+  const unsubscribe = useCallback((connectUrl: string, eventName: string) => {
+    const sseInfo = sseInfos.current.find(x => x.connectUrl === connectUrl);
+    if (sseInfo === undefined) {
+      console.error(`${connectUrl}에 연결되어 있지 않습니다.`);
+      return;
+    }
+    const ssePureListenerInfo = ssePureListenerInfos.current.get(`${connectUrl}${seperatorChar}${eventName}`);
+    if (ssePureListenerInfo === undefined) {
+      console.error(`콜백 정보가 없습니다.`);
+      return;
+    }
+    sseInfo.eventSource.removeEventListener(eventName, ssePureListenerInfo.listener);
+    ssePureListenerInfos.current.delete(`${connectUrl}${seperatorChar}${eventName}`);
+  }, []);
+
+  const isConnected = useCallback((connectUrl: string) => {
+    const target = sseInfos.current.find(x => x.connectUrl === connectUrl);
+    return target !== undefined;
+  }, []);
 
   useEffect(() => {
     return function unmounted() {
-      for (const sse of sses.current) {
-        clear(sse);
+      for (const sseInfo of sseInfos.current) {
+        disconnect(sseInfo.connectUrl);
       }
-      sses.current = [];
+      sseInfos.current = [];
     };  
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -139,8 +147,10 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
   return {
     connect,
     disconnect,
-    connectSuccessInfo,
-    setListener,
-    removeListener,
+    saveSubscriberInfo,
+    subscribe,
+    unsubscribe,
+    isConnected,
+    // recentUpdatedAt,
   };
 }

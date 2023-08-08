@@ -1,17 +1,24 @@
 export declare namespace IUseServerSentEventManager {
-  export interface ListenerItem {
+  export type SseListener = (event: MessageEvent) => void;
+
+  export interface SubscriberInfo {
+    connectUrl: string;
     eventName: string;
-    listener: (event: MessageEvent) => void;
+    listener: SseListener;
+  }
+
+  export interface PureListenerInfo {
+    eventName: string;
+    listener: SseListener;
   }
 
   export interface SseInfo {
     connectUrl: string;
     disconnectUrl?: string;
     eventSource: EventSource;
-    listenerItems: ListenerItem[];
   }
 
   export interface Props {
-
+    onConnectSuccessSseInfo?: (sseInfo: SseInfo) => void;
   }
 }
