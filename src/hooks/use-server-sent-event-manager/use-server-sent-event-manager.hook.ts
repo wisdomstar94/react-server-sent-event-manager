@@ -105,6 +105,13 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
       console.error(`${connectUrl}에 연결되어 있지 않습니다.`);
       return;
     }
+
+    const ssePureListenerInfo = ssePureListenerInfos.current.get(`${connectUrl}${seperatorChar}${eventName}`);
+    if (ssePureListenerInfo !== undefined) {
+      console.warn('이미 구독 중입니다.');
+      return;
+    }
+
     const listener: IUseServerSentEventManager.SseListener = (event) => {
       const subscriberInfo = sseSubscriberInfos.current.get(`${connectUrl}${seperatorChar}${eventName}`);
       if (subscriberInfo === undefined) return;
