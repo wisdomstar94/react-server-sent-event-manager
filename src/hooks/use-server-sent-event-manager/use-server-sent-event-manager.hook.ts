@@ -14,10 +14,11 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
   const ssePureListenerInfos = useRef<Map<string, IUseServerSentEventManager.PureListenerInfo>>(new Map());
   // const [recentUpdatedAt, setRecentUpdatedAt] = useState({ createdAt: 0 });
 
-  const removeSse = useCallback((connectUrl: string): void => {
-    sseInfos.current = sseInfos.current.filter(x => x.connectUrl !== connectUrl);
-    // setRecentUpdatedAt({ createdAt: Date.now() });
-  }, []);
+  // const tryConnectTimeout = useRef<NodeJS.Timeout>();
+  // const removeSse = useCallback((connectUrl: string): void => {
+  //   sseInfos.current = sseInfos.current.filter(x => x.connectUrl !== connectUrl);
+  //   // setRecentUpdatedAt({ createdAt: Date.now() });
+  // }, []);
 
   const getSse = useCallback((connectUrl: string): IUseServerSentEventManager.SseInfo | undefined => {
     return sseInfos.current.find(x => x.connectUrl === connectUrl);
@@ -33,17 +34,14 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
       return;
     }
 
-    let tryCount = 0;
-
     const tryConnect = () => {
-      if (tryCount > 2) {
-        return;
-      }
-
+      // tryConnectTimeout.current = setTimeout(() => {
       const eventSource = new EventSource(connectUrl, {
         withCredentials: true,
       });
-  
+
+      // console.log('@eventSource.CONNECTING', eventSource.CONNECTING);
+
       eventSource.onopen = function() {
         console.log(`success to connect to server "${connectUrl}"`);
         const sseInfo: IUseServerSentEventManager.SseInfo = {
@@ -58,26 +56,25 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
   
       eventSource.onerror = function() {
         console.warn(`failure to connect to server "${connectUrl}"`);
-        eventSource.close();
-        removeSse(connectUrl);
+        // eventSource.close();
+        // removeSse(connectUrl);
         if (typeof disconnectUrl === 'string') {
           axios.get(disconnectUrl).then(res => {
   
           }).catch(error => {
   
           }).finally(() => {
-            tryConnect();
+            // tryConnect(3000);
           });
         } else {
-          tryConnect();
+          // tryConnect(3000);
         }
       };
-
-      tryCount++;
+      // }, delay);
     };
 
     tryConnect();
-  }, [isAlreadyConnected, onConnectSuccessSseInfo, removeSse]);
+  }, [isAlreadyConnected, onConnectSuccessSseInfo]);
 
   const disconnect = useCallback((connectUrl: string) => {
     console.log('@disconnect', connectUrl);
@@ -106,9 +103,16 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
       return;
     }
 
+    // const ssePureListenerInfo = ssePureListenerInfos.current.get(`${connectUrl}${seperatorChar}${eventName}`);
+    // if (ssePureListenerInfo !== undefined) {
+    //   console.warn('이미 구독 중입니다.');
+    //   return;
+    // }
+
     const ssePureListenerInfo = ssePureListenerInfos.current.get(`${connectUrl}${seperatorChar}${eventName}`);
     if (ssePureListenerInfo !== undefined) {
-      console.warn('이미 구독 중입니다.');
+      // sseInfo.eventSource.removeEventListener(ssePureListenerInfo.eventName, ssePureListenerInfo.listener);  
+      // ssePureListenerInfos.current.delete(`${connectUrl}${seperatorChar}${eventName}`);
       return;
     }
 
@@ -150,6 +154,12 @@ export function useServerSentEventManager(props?: IUseServerSentEventManager.Pro
     };  
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // useEffect(() => {
+  //   return () => {
+  //     clearTimeout(tryConnectTimeout.current);
+  //   };
+  // }, []);
 
   return {
     connect,
