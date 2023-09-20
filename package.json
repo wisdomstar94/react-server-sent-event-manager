@@ -1,6 +1,6 @@
 {
   "name": "@wisdomstar94/react-server-sent-event-manager",
-  "version": "0.0.5-test.1",
+  "version": "0.0.5",
   "license": "MIT",
   "private": false,
   "scripts": {
